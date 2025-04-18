@@ -11,7 +11,8 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.10.1",
         "openai-php/laravel": "^0.11.0",
-        "smalot/pdfparser": "^2.12"
+        "smalot/pdfparser": "^2.12",
+        "spatie/pdf-to-text": "^1.54"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

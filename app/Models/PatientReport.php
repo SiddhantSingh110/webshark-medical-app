@@ -10,7 +10,18 @@ class PatientReport extends Model
     use HasFactory;
 
     protected $fillable = [
-        'patient_id', 'doctor_id', 'file_path', 'type', 'notes'
+        'patient_id', 
+        'doctor_id', 
+        'file_path', 
+        'type', 
+        'notes',
+        'report_date',
+        'report_title',
+        'uploaded_by'
+    ];
+
+    protected $casts = [
+        'report_date' => 'date',
     ];
 
     public function aiSummary()
@@ -28,4 +39,3 @@ class PatientReport extends Model
         return $this->belongsTo(Doctor::class);
     }
 }
-

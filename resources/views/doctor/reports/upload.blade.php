@@ -1,6 +1,7 @@
 @extends('doctor.layout')
 
 @section('content')
+
 <h2 class="text-2xl font-bold mb-4">Upload New Report</h2>
 
 <form method="POST" action="{{ route('doctor.reports.upload.submit') }}" enctype="multipart/form-data" class="bg-white p-6 rounded shadow">

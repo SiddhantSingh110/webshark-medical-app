@@ -31,6 +31,34 @@ Route::prefix('doctor')->name('doctor.')->group(function () {
     });
 });
 
+// Global /login route handler (optional fallback based on role detection)
 Route::get('/login', function () {
-    return redirect()->route('doctor.login');
+    if (auth('doctor')->check()) {
+        return redirect()->route('doctor.reports.index');
+    } elseif (auth('patient')->check()) {
+        return redirect()->route('patient.dashboard');
+    }
+
+    // Default fallback - redirect to a general landing page or ask role
+    return redirect('/choose-role'); // or show a "choose role" page
 })->name('login');
+
+use App\Http\Controllers\Patient\WebController;
+use App\Http\Controllers\API\Patient\HealthMetricsController;
+
+// Patient web routes for testing
+Route::prefix('patient')->name('patient.')->group(function () {
+    Route::get('/register', [WebController::class, 'showRegisterForm'])->name('register');
+    Route::get('/login', [WebController::class, 'showLoginForm'])->name('login');
+    Route::post('/login', [WebController::class, 'login'])->name('login.submit'); // Handle login form submission
+    Route::post('/logout', [WebController::class, 'logout'])->name('logout'); // Handle logout
+    // Protected routes
+    Route::middleware('auth:patient')->group(function () {
+        Route::get('/dashboard', [WebController::class, 'dashboard'])->name('dashboard');
+        Route::get('/upload', [WebController::class, 'showUploadForm'])->name('upload');
+        Route::post('/upload', [\App\Http\Controllers\API\Patient\ReportController::class, 'upload'])->name('reports.upload');
+        Route::get('/reports/all', [WebController::class, 'allReports'])->name('reports.all');
+        Route::get('/reports/{id}', [WebController::class, 'showReport'])->name('reports.show');
+        Route::get('/metrics', [WebController::class, 'healthMetricsView'])->name('metrics.index');
+    });
+});

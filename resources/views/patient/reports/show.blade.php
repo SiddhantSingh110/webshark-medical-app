@@ -474,43 +474,75 @@
             });
         }
         
-        // Load finding details from API
-        function loadFindingDetails(finding, contentElement) {
-            fetch(`/api/patient/reports/${reportId}/findings`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': 'Bearer ' + token,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ finding: finding })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success && data.details) {
-                    // Create tabs UI with the detailed information
-                    const tabsHTML = createFindingDetailsTabs(data.details);
-                    contentElement.innerHTML = tabsHTML;
+            // Load finding details from API
+            function loadFindingDetails(finding, contentElement) {
+                // Log the finding data for debugging
+                console.log('Finding data:', finding);
+                
+                fetch(`/api/patient/reports/${reportId}/findings`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        // Important: The API expects the finding object directly, not nested
+                        finding: finding 
+                    })
+                })
+                .then(res => {
+                    if (!res.ok) {
+                        console.error('API error:', res.status, res.statusText);
+                        throw new Error(`API error: ${res.status} ${res.statusText}`);
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    console.log('API response:', data);
                     
-                    // Initialize tabs
-                    initDetailTabs(contentElement);
-                } else {
+                    if (data.success && data.details) {
+                        // Create tabs UI with the detailed information
+                        const tabsHTML = createFindingDetailsTabs(data.details);
+                        contentElement.innerHTML = tabsHTML;
+                        
+                        // Initialize tabs
+                        initDetailTabs(contentElement);
+                    } else {
+                        // Handle error case
+                        contentElement.innerHTML = `
+                            <div style="padding: 15px;">
+                                <p>Could not load additional details for this finding.</p>
+                                <button onclick="retryLoadDetails(this)" class="retry-button" style="padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Try Again</button>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error("Error loading finding details:", error);
                     contentElement.innerHTML = `
                         <div style="padding: 15px;">
-                            <p>Could not load additional details for this finding.</p>
+                            <p>An error occurred while loading details: ${error.message}</p>
+                            <button onclick="retryLoadDetails(this)" class="retry-button" style="padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;">Try Again</button>
                         </div>
                     `;
-                }
-            })
-            .catch(error => {
-                console.error("Error loading finding details:", error);
-                contentElement.innerHTML = `
-                    <div style="padding: 15px;">
-                        <p>An error occurred while loading details. Please try again.</p>
-                    </div>
-                `;
-            });
-        }
+                });
+            }
+
+            // Function to retry loading details
+            function retryLoadDetails(button) {
+                const contentElement = button.closest('.accordion-content');
+                const findingData = JSON.parse(contentElement.getAttribute('data-finding'));
+                
+                // Reset content to loading spinner
+                contentElement.innerHTML = '<div class="loading-spinner"></div>';
+                
+                // Try loading again
+                loadFindingDetails(findingData, contentElement);
+                
+                // Prevent event propagation
+                event.stopPropagation();
+            }
         
         // Create tabs UI for finding details
         function createFindingDetailsTabs(details) {
