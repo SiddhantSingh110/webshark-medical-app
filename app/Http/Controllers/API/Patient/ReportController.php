@@ -8,6 +8,7 @@ use App\Models\AISummary;
 use App\Models\HealthMetric;
 use App\Services\AISummaryService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\PdfToText\Pdf;
@@ -207,8 +208,8 @@ class ReportController extends Controller
             $finding = $request->input('finding');
             
             // Get the report for context
-            $report = Report::where('id', $id)
-                ->where('patient_id', auth()->user()->id)
+            $report = PatientReport::where('id', $id)
+                ->where('patient_id', auth()->id())
                 ->first();
                 
             if (!$report) {
