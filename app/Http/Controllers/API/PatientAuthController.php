@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class PatientAuthController extends Controller
 {
@@ -122,54 +124,74 @@ class PatientAuthController extends Controller
      */
     public function updateProfile(Request $request)
     {
+        // Log the incoming request data
+        Log::info('Update Profile Request:', $request->all());
+        
         $validator = Validator::make($request->all(), [
-            'name'   => 'sometimes|required|string|max:255',
-            'email'  => 'sometimes|nullable|email|unique:patients,email,' . $request->user()->id,
-            'gender' => 'sometimes|nullable|in:male,female,other',
-            'dob'    => 'sometimes|nullable|date',
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|nullable|email|unique:patients,email,' . $request->user()->id,
+            'gender' => 'sometimes|nullable|string|in:Male,Female,Other,male,female,other',
+            'dob' => 'sometimes|nullable|date',
             'height' => 'sometimes|nullable|numeric',
             'weight' => 'sometimes|nullable|numeric',
+            'blood_group' => 'sometimes|nullable|string|max:10',
+            'profile_photo' => 'sometimes|nullable|image|mimes:jpeg,png,jpg|max:2048',
         ]);
-
+    
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
-
+    
         $patient = $request->user();
-        
-        // Only update fields that were actually passed
-        if ($request->has('name')) {
+    
+        // Update only if the field is present in the request
+        if ($request->filled('name')) {
             $patient->name = $request->name;
         }
-        
-        if ($request->has('email')) {
+        if ($request->filled('email')) {
             $patient->email = $request->email;
         }
-        
-        if ($request->has('gender')) {
-            $patient->gender = $request->gender;
+        if ($request->filled('gender')) {
+            // Convert to lowercase for consistency in database
+            $patient->gender = strtolower($request->gender);
         }
-        
-        if ($request->has('dob')) {
+        if ($request->filled('dob')) {
             $patient->dob = $request->dob;
         }
-        
-        if ($request->has('height')) {
+        if ($request->filled('height')) {
             $patient->height = $request->height;
         }
-        
-        if ($request->has('weight')) {
+        if ($request->filled('weight')) {
             $patient->weight = $request->weight;
         }
-        
+        if ($request->filled('blood_group')) {
+            $patient->blood_group = $request->blood_group;
+        }
+    
+        if ($request->hasFile('profile_photo')) {
+            $file = $request->file('profile_photo');
+            $filename = uniqid('profile_') . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('profile_photos', $filename, 'public');
+    
+            // Optionally delete old photo
+            if ($patient->profile_photo && Storage::disk('public')->exists($patient->profile_photo)) {
+                Storage::disk('public')->delete($patient->profile_photo);
+            }
+    
+            $patient->profile_photo = $path;
+        }
+    
         $patient->save();
-
+    
+        // Log the updated patient data
+        Log::info('Updated Patient Data:', $patient->toArray());
+    
         return response()->json([
             'message' => 'Profile updated successfully',
             'user' => $patient
         ]);
     }
-
+    
     /**
      * Change password
      * 

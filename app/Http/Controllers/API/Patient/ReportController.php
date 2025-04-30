@@ -11,7 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Spatie\PdfToText\Pdf;
+use Spatie\PdfToText\Pdf as PdfToText;
+use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
 
 class ReportController extends Controller
 {
@@ -44,7 +45,7 @@ class ReportController extends Controller
         $text = '';
         if ($ext === 'pdf') {
             try {
-                $text = Pdf::getText($file->getPathname());
+                $text = PdfToText::getText($file->getPathname());
                 $text = $this->normalizePdfText($text);
                 $metrics = $this->extractHealthMetrics($text);
 
@@ -255,5 +256,23 @@ class ReportController extends Controller
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+    public function downloadSummaryPdf($id)
+    {
+        $report = PatientReport::with('aiSummary')
+            ->where('id', $id)
+            ->where('patient_id', auth()->id())
+            ->firstOrFail();
+
+        $summary = $report->aiSummary->summary_json ?? [];
+        $confidence = $report->aiSummary->confidence_score ?? null;
+
+        $pdf = DomPdf::loadView('pdfs.ai_summary', [
+            'report' => $report,
+            'summary' => $summary,
+            'confidence' => $confidence,
+        ]);
+
+        return $pdf->download('AI_Summary_Report.pdf');
     }
 }

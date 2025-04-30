@@ -63,6 +63,7 @@ Route::middleware('auth:sanctum')->prefix('patient')->group(function () {
     Route::post('/reports', [ReportController::class, 'upload']);
     Route::get('/reports', [ReportController::class, 'index']);
     Route::get('/reports/{id}', [ReportController::class, 'show']);
+    Route::get('/reports/{id}/summary-pdf', [ReportController::class, 'downloadSummaryPdf']);
     Route::post('/reports/{id}/findings', [ReportController::class, 'getFindingDetails']);
     Route::delete('/reports/{id}', [ReportController::class, 'destroy']);
 });
