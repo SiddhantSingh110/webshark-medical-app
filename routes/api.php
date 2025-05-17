@@ -18,7 +18,7 @@ Route::post('/patient/login', [PatientAuthController::class, 'login']);
 Route::middleware('auth:sanctum')->prefix('patient')->group(function () {
     Route::post('/logout', [PatientAuthController::class, 'logout']);
     Route::get('/profile', [PatientAuthController::class, 'profile']);
-    Route::put('/profile', [PatientAuthController::class, 'updateProfile']);
+    Route::match(['put', 'post'], '/profile', [PatientAuthController::class, 'updateProfile']);
     Route::post('/change-password', [PatientAuthController::class, 'changePassword']);
 });
 

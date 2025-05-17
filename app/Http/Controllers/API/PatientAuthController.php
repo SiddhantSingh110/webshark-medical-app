@@ -117,83 +117,213 @@ class PatientAuthController extends Controller
     }
 
     /**
-     * Update patient profile
+     * Update patient profile with support for profile photo uploads
      * 
      * @param  Request  $request
      * @return \Illuminate\Http\JsonResponse
      */
     public function updateProfile(Request $request)
     {
-        // Log the incoming request data
-        Log::info('Update Profile Request:', $request->all());
+        Log::info('Update Profile Request');
         
-        $validator = Validator::make($request->all(), [
+        // Get raw input and try to parse manually if needed
+        $rawInput = file_get_contents('php://input');
+        Log::info('Raw Input', [$rawInput]);
+        
+        // Check if regular parsing worked
+        $parsedData = $request->all();
+        Log::info('Parsed Fields', [$parsedData]);
+        
+        // Check for uploaded files
+        $files = $request->allFiles();
+        Log::info('Files in request', ['count' => count($files), 'keys' => array_keys($files)]);
+        
+        // Extract form data if needed
+        if (empty($parsedData) || (count($parsedData) === 1 && isset($parsedData['profile_photo']) && empty($parsedData['profile_photo']))) {
+            Log::info('Regular parsing failed or only contained empty profile_photo, attempting manual extraction');
+            $parsedData = $this->extractFormDataFromRawInput($rawInput);
+            Log::info('Manually extracted data', [$parsedData]);
+        }
+        
+        // Validation - DON'T validate the profile_photo here as it might be handled separately
+        $validator = Validator::make($parsedData, [
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|nullable|email|unique:patients,email,' . $request->user()->id,
-            'gender' => 'sometimes|nullable|string|in:Male,Female,Other,male,female,other',
-            'dob' => 'sometimes|nullable|date',
+            'gender' => 'sometimes|nullable|in:male,female,other',
+            'dob' => 'sometimes|nullable|date_format:Y-m-d',  // Strict date format
             'height' => 'sometimes|nullable|numeric',
             'weight' => 'sometimes|nullable|numeric',
             'blood_group' => 'sometimes|nullable|string|max:10',
-            'profile_photo' => 'sometimes|nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'phone' => 'sometimes|nullable|string',
         ]);
     
         if ($validator->fails()) {
+            Log::error('Validation failed', ['errors' => $validator->errors()->toArray()]);
             return response()->json(['errors' => $validator->errors()], 422);
         }
     
         $patient = $request->user();
-    
-        // Update only if the field is present in the request
-        if ($request->filled('name')) {
-            $patient->name = $request->name;
+        
+        // Update fields from parsed data
+        if (!empty($parsedData['name'])) {
+            $patient->name = $parsedData['name'];
         }
-        if ($request->filled('email')) {
-            $patient->email = $request->email;
+        
+        if (isset($parsedData['email'])) {
+            $patient->email = $parsedData['email'];
         }
-        if ($request->filled('gender')) {
-            // Convert to lowercase for consistency in database
-            $patient->gender = strtolower($request->gender);
-        }
-        if ($request->filled('dob')) {
-            $patient->dob = $request->dob;
-        }
-        if ($request->filled('height')) {
-            $patient->height = $request->height;
-        }
-        if ($request->filled('weight')) {
-            $patient->weight = $request->weight;
-        }
-        if ($request->filled('blood_group')) {
-            $patient->blood_group = $request->blood_group;
-        }
-    
-        if ($request->hasFile('profile_photo')) {
-            $file = $request->file('profile_photo');
-            $filename = uniqid('profile_') . '.' . $file->getClientOriginalExtension();
-            $path = $file->storeAs('profile_photos', $filename, 'public');
-    
-            // Optionally delete old photo
-            if ($patient->profile_photo && Storage::disk('public')->exists($patient->profile_photo)) {
-                Storage::disk('public')->delete($patient->profile_photo);
+        
+        if (!empty($parsedData['gender'])) {
+            // Explicitly check for valid values
+            $gender = strtolower($parsedData['gender']);
+            if (in_array($gender, ['male', 'female', 'other'])) {
+                $patient->gender = $gender;
             }
-    
-            $patient->profile_photo = $path;
         }
+        
+        if (!empty($parsedData['dob'])) {
+            // Ensure proper date format
+            try {
+                $date = new \DateTime($parsedData['dob']);
+                $patient->dob = $date->format('Y-m-d');
+            } catch (\Exception $e) {
+                Log::error('Invalid date format', ['dob' => $parsedData['dob']]);
+            }
+        }
+        
+        if (isset($parsedData['height']) && is_numeric($parsedData['height'])) {
+            $patient->height = $parsedData['height'];
+        }
+        
+        if (isset($parsedData['weight']) && is_numeric($parsedData['weight'])) {
+            $patient->weight = $parsedData['weight'];
+        }
+        
+        if (!empty($parsedData['blood_group'])) {
+            $patient->blood_group = $parsedData['blood_group'];
+        }
+        
+        // Process profile photo - check in request
+        $profilePhoto = $request->file('profile_photo');
     
-        $patient->save();
-    
-        // Log the updated patient data
-        Log::info('Updated Patient Data:', $patient->toArray());
-    
-        return response()->json([
-            'message' => 'Profile updated successfully',
-            'user' => $patient
-        ]);
+        // In the profile photo handling section
+        if ($profilePhoto && $profilePhoto->isValid()) {
+            try {
+                // Create a unique filename
+                $filename = 'profile_' . uniqid() . '.jpg';
+                
+                // Resize the image using Intervention Image library
+                // First, install it: composer require intervention/image
+                $img = \Intervention\Image\Facades\Image::make($profilePhoto);
+                
+                // Resize to reasonable dimensions while maintaining aspect ratio
+                $img->resize(500, null, function ($constraint) {
+                    $constraint->aspectRatio();
+                    $constraint->upsize();
+                });
+                
+                // Save the resized image to storage
+                $path = 'profile_photos/' . $filename;
+                Storage::disk('public')->put($path, (string) $img->encode('jpg', 70));
+                
+                // Delete old profile photo if exists
+                if ($patient->profile_photo && Storage::disk('public')->exists($patient->profile_photo)) {
+                    Storage::disk('public')->delete($patient->profile_photo);
+                }
+                
+                // Update patient record
+                $patient->profile_photo = $path;
+                Log::info('Profile photo resized and saved', [
+                    'original_size' => $profilePhoto->getSize(),
+                    'path' => $path,
+                    'dimensions' => $img->width() . 'x' . $img->height()
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Error processing profile photo', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        } else {
+            // Log that we didn't find a file
+            Log::info('No profile photo found in request');
+        }
+        
+        // Save patient data
+        try {
+            $patient->save();
+            Log::info('Patient saved successfully', $patient->toArray());
+            
+            return response()->json([
+                'message' => 'Profile updated successfully',
+                'user' => $patient,
+                'status' => 'success'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error saving patient data', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Error updating profile',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Helper function to translate upload error codes to messages
+     *
+     * @param int $code Error code from PHP file upload
+     * @return string Human-readable error message
+     */
+    protected function uploadErrorCodeToMessage($code)
+    {
+        switch ($code) {
+            case UPLOAD_ERR_INI_SIZE:
+                return 'The uploaded file exceeds the upload_max_filesize directive in php.ini';
+            case UPLOAD_ERR_FORM_SIZE:
+                return 'The uploaded file exceeds the MAX_FILE_SIZE directive that was specified in the HTML form';
+            case UPLOAD_ERR_PARTIAL:
+                return 'The uploaded file was only partially uploaded';
+            case UPLOAD_ERR_NO_FILE:
+                return 'No file was uploaded';
+            case UPLOAD_ERR_NO_TMP_DIR:
+                return 'Missing a temporary folder';
+            case UPLOAD_ERR_CANT_WRITE:
+                return 'Failed to write file to disk';
+            case UPLOAD_ERR_EXTENSION:
+                return 'A PHP extension stopped the file upload';
+            default:
+                return 'Unknown upload error';
+        }
+    }
+
+    /**
+     * Helper function to manually extract form data from raw input
+     *
+     * @param string $rawInput Raw HTTP request body
+     * @return array Extracted form data as associative array
+     */
+    private function extractFormDataFromRawInput($rawInput)
+    {
+        $data = [];
+        
+        // Extract form fields using regex pattern
+        preg_match_all('/content-disposition: form-data; name=\"([^\"]+)\"\s+\s+([\s\S]+?)(?=--|\Z)/i', $rawInput, $matches, PREG_SET_ORDER);
+        
+        foreach ($matches as $match) {
+            $fieldName = $match[1];
+            $fieldValue = trim($match[2]);
+            $data[$fieldName] = $fieldValue;
+        }
+        
+        return $data;
     }
     
     /**
-     * Change password
+     * Change password for authenticated patient
      * 
      * @param  Request  $request
      * @return \Illuminate\Http\JsonResponse
@@ -203,6 +333,7 @@ class PatientAuthController extends Controller
         $validator = Validator::make($request->all(), [
             'current_password' => 'required|string',
             'new_password'     => 'required|string|min:6|different:current_password',
+            'profile_photo' => 'sometimes|image|mimes:jpeg,png,jpg|max:10048', // 10MB max
         ]);
 
         if ($validator->fails()) {

@@ -21,6 +21,7 @@ class Patient extends Authenticatable
         'weight',
         'health_flags',
         'profile_photo',
+        'blood_group',
     ];
 
     protected $hidden = [
